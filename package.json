@@ -1,0 +1,27 @@
+{
+  "name": "stay-pulse",
+  "version": "1.0.0",
+  "description": "Subscription health monitoring platform with AI-powered churn prediction",
+  "main": "index.js",
+  "scripts": {
+    "dev": "pnpm --filter api start:dev",
+    "build": "pnpm --filter api build",
+    "test": "pnpm --filter api test",
+    "format": "pnpm --filter api format",
+    "lint": "pnpm --filter api lint"
+  },
+  "keywords": [
+    "subscription",
+    "analytics",
+    "monitoring",
+    "ai",
+    "churn-prediction"
+  ],
+  "author": "",
+  "license": "ISC",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "libs/*"
+  ]
+}
