@@ -1,64 +1,121 @@
-// subscription.service.ts
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Subscription } from './entities/subscription.entity';
+import { SubscriptionStatus } from './dto/subscription.dto';
 
 @Injectable()
 export class SubscriptionService {
   constructor(
     @InjectRepository(Subscription)
-    private subscriptionRepo: Repository<Subscription>,
+    private subscriptionRepository: Repository<Subscription>,
   ) {}
 
+  async findByMerchant(merchantId: string): Promise<Subscription[]> {
+    return this.subscriptionRepository.find({
+      where: { merchantId },
+    });
+  }
+
   async getSubscriptionMetrics(merchantId: string) {
-    const subscriptions = await this.subscriptionRepo.find({
+    const subscriptions = await this.subscriptionRepository.find({
       where: { merchantId },
     });
 
+    const totalSubscriptions = subscriptions.length;
+    const activeSubscriptions = subscriptions.filter(
+      (s) => s.status === SubscriptionStatus.ACTIVE,
+    ).length;
+
+    const statusCounts = {
+      active: subscriptions.filter(
+        (s) => s.status === SubscriptionStatus.ACTIVE,
+      ).length,
+      paused: subscriptions.filter(
+        (s) => s.status === SubscriptionStatus.PAUSED,
+      ).length,
+      cancelled: subscriptions.filter(
+        (s) => s.status === SubscriptionStatus.CANCELLED,
+      ).length,
+      high_risk: subscriptions.filter(
+        (s) => s.status === SubscriptionStatus.AT_RISK,
+      ).length,
+    };
+
+    const churnRate =
+      totalSubscriptions > 0
+        ? (statusCounts.cancelled / totalSubscriptions) * 100
+        : 0;
+
+    const mrr = subscriptions.reduce((total, sub) => {
+      return (
+        total + (sub.frequency === 'monthly' ? sub.amount : sub.amount / 12)
+      );
+    }, 0);
+
     return {
-      total: subscriptions.length,
-      active: subscriptions.filter((s) => s.status === 'active').length,
-      mrr: this.calculateMRR(subscriptions),
+      totalSubscriptions,
+      activeSubscriptions,
+      statusCounts,
+      churnRate,
+      mrr,
     };
   }
 
   async getChurnRiskAnalysis(merchantId: string) {
-    const subscriptions = await this.subscriptionRepo.find({
+    const subscriptions = await this.subscriptionRepository.find({
       where: { merchantId },
+      order: { churnRiskScore: 'DESC' },
     });
 
-    // For now, return a simple analysis
-    // We'll enhance this with AI predictions later
+    const atRiskCount = subscriptions.filter(
+      (s) => s.churnRiskScore > 0.7,
+    ).length;
+    const moderateRiskCount = subscriptions.filter(
+      (s) => s.churnRiskScore > 0.4 && s.churnRiskScore <= 0.7,
+    ).length;
+
+    const riskDistribution = {
+      high_risk: atRiskCount,
+      moderate_risk: moderateRiskCount,
+      healthy: subscriptions.length - (atRiskCount + moderateRiskCount),
+    };
+
+    const topRiskFactors = this.analyzeCommonRiskFactors(subscriptions);
+
     return {
-      totalSubscriptions: subscriptions.length,
-      churnRisk: {
-        high: subscriptions.filter((s) => s.status === 'at_risk').length,
-        medium: subscriptions.filter(
-          (s) =>
-            s.status === 'active' && this.isOlderThanMonths(s.createdAt, 6),
-        ).length,
-        low: subscriptions.filter(
-          (s) =>
-            s.status === 'active' && !this.isOlderThanMonths(s.createdAt, 6),
-        ).length,
-      },
+      riskDistribution,
+      topRiskFactors,
+      atRiskSubscriptions: subscriptions
+        .filter((s) => s.churnRiskScore > 0.7)
+        .map((s) => ({
+          id: s.id,
+          customerId: s.customerId,
+          riskScore: s.churnRiskScore,
+          riskFactors: s.riskFactors,
+        })),
     };
   }
 
-  private calculateMRR(subscriptions: Subscription[]) {
-    return subscriptions
-      .filter((s) => s.status === 'active')
-      .reduce((total, sub) => {
-        return (
-          total + (sub.frequency === 'monthly' ? sub.amount : sub.amount / 12)
-        );
-      }, 0);
-  }
+  private analyzeCommonRiskFactors(subscriptions: Subscription[]) {
+    const allRiskFactors = subscriptions
+      .filter((s) => s.riskFactors && s.riskFactors.length > 0)
+      .flatMap((s) => s.riskFactors);
 
-  private isOlderThanMonths(date: Date, months: number): boolean {
-    const monthsAgo = new Date();
-    monthsAgo.setMonth(monthsAgo.getMonth() - months);
-    return date < monthsAgo;
+    const factorCounts = allRiskFactors.reduce(
+      (acc, factor) => {
+        acc[factor.type] = (acc[factor.type] || 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+
+    return Object.entries(factorCounts)
+      .sort(([, a], [, b]) => b - a)
+      .map(([type, count]) => ({
+        type,
+        count,
+        percentage: (count / subscriptions.length) * 100,
+      }));
   }
 }
