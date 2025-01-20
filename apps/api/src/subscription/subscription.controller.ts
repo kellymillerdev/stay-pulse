@@ -19,4 +19,9 @@ export class SubscriptionController {
   async findByMerchant(@Param('merchantId') merchantId: string) {
     return this.subscriptionService.findByMerchant(merchantId);
   }
+
+  @Get('test')
+  async test() {
+    return { message: 'Controller is working' };
+  }
 }

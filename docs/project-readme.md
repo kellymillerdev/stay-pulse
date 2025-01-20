@@ -22,7 +22,7 @@ staypulse/
 │   └── shared/     # Common types/utilities
 ```
 
-## Tech Stac
+## Tech Stack
 
 - **Core System**: Nest.js with TypeScript
 - **Data Store**: PostgreSQL
